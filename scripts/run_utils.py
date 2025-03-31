@@ -9,9 +9,10 @@ from engine.utils.cv2_utils import load_rgb_png, write_rgb_png
 import numpy as np
 
 try:
-    from engine.utils.code_llama_client import setup_llama
-except:
-    print("Unable to import Llama modules. Are you running on cluster?")
+    # from engine.utils.code_llama_client import setup_llama
+    from engine.utils.deepseek_client import setup_deepseek
+except ImportError as e:
+    print(f"Unable to import Llama and/or DeepSeek modules. Error: {e}")
 from engine.utils.lm_utils import unwrap_results
 from engine.utils.execute_utils import execute_command
 from engine.constants import (
@@ -85,6 +86,7 @@ if ENGINE_MODE == "minecraft":
     SYSTEM_RULES += """\n5. Pay attention that the objects are not too large so it can't be rendered."""
 # if ENGINE_MODE == 'mi_material':
 #     SYSTEM_RULES += "4. Specify materials to be as realistic as possible; see documentation for `primitive_call`.\n"
+
 if ENGINE_MODE in ["mi", "mi_material", "exposed"]:
     #     SYSTEM_RULES += "4. You can use shape primitives to approximate shape components that are too complex. You must make sure shape have correct poses. \
     # Be careful about `set_mode` and `set_to` from `primitive_call`.\n"
@@ -206,7 +208,7 @@ get_impl = {
     "assert": get_assert_impl,
     "default": get_default_impl,
     "calc": get_default_impl,
-}[PROMPT_MODE]
+}[PROMPT_MODE] #PROMPT_MODE的值决定了从 get_impl 字典中选择哪个函数。
 
 
 def generate(
@@ -227,6 +229,17 @@ def generate(
         return results
     elif LLM_PROVIDER == "claude":
         model = setup_claude()
+        if prepend_messages is not None:
+            raise NotImplementedError(prepend_messages)
+        _, results = model.generate(
+            user_prompt=user_prompt,
+            system_prompt=system_prompt,
+            skip_cache=skip_cache,
+            **lm_config,
+        )
+        return results
+    elif LLM_PROVIDER == "deepseek":
+        model = setup_deepseek()
         if prepend_messages is not None:
             raise NotImplementedError(prepend_messages)
         _, results = model.generate(
@@ -266,22 +279,26 @@ def run(
         json.dump(info, f)
 
     # Generate using GPT
-    results = generate(
-        user_prompt=user_prompt,
-        system_prompt=system_prompt,
-        prepend_messages=prepend_messages,
-        lm_config=lm_config,
-    )
+    # results = generate(
+    #     user_prompt=user_prompt,
+    #     system_prompt=system_prompt,
+    #     prepend_messages=prepend_messages, #一般为None
+    #     lm_config=lm_config,
+    # ) # 列表嵌套列表
+    gemini_file_path = "/home/roujin/scene-language/gemini.txt"
+    with open(gemini_file_path, "r") as f:
+        gemini_output = f.read()
+    results = [[gemini_output]]
 
     programs = []
-    for ind, result in enumerate(results):
+    for ind, result in enumerate(results): 
         trial_save_dir = save_dir / str(ind)
         trial_save_dir.mkdir(exist_ok=True)
         with open((trial_save_dir / "raw.txt").as_posix(), "w") as f:
             f.write("\n".join(result))
 
         try:
-            lines = unwrap_results(result, code_only)
+            lines = unwrap_results(result, code_only) # result是一个len为1的列表
         except Exception as _:
             with open((trial_save_dir / "error.txt").as_posix(), "w") as f:
                 f.write(traceback.format_exc())
@@ -301,12 +318,16 @@ def run(
             f.write(full_program)
         if not execute:
             continue
+
+        breakpoint()
+        
         impl = get_impl(full_program)
 
         save_to = (trial_save_dir / "impl.py").as_posix()
         with open(save_to, "w") as f:
             f.write(impl)
 
+        # python 多行字符串拼接语法
         command = (
             f'ENGINE_MODE={ENGINE_MODE} DEBUG={"1" if DEBUG else "0"} '
             f'PYTHONPATH={Path(__file__).parent / "prompts"}:$PYTHONPATH python {save_to}'

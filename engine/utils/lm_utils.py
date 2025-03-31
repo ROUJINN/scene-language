@@ -5,17 +5,15 @@ def unwrap_results(lines: list[str], code_only: bool = False) -> Union[list[str]
     Unwrap the results from the markdown file.
     Assume the code block is wrapped within ```python ... ```
     """
-    lines = [line.rstrip() for line in lines]
+    # lines = [line.rstrip() for line in lines]
+    
+    lines = lines[0].split('\n')
     if '```python' not in lines:
-        # print(lines)
-        # import ipdb; ipdb.set_trace()
         return None
     if '```' not in lines:
         return None
-        # import ipdb; ipdb.set_trace()
     code_start = lines.index('```python') + 1
     code_end = lines.index('```')
-    # print(code_start, code_end)
     if code_only:
         return (lines[code_start:code_end]) 
     else:
@@ -25,7 +23,7 @@ def unwrap_results(lines: list[str], code_only: bool = False) -> Union[list[str]
                 lines[code_start:code_end] +
                 ([] if code_end == (len(lines) - 1) else ['"""'] +
                 lines[code_end + 1:] +
-                ['"""']))
+                ['"""'])) # 就是用"""分隔开了代码和代码之外的内容
 
 
 if __name__ == "__main__":

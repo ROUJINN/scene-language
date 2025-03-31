@@ -15,6 +15,15 @@ try:
 except:
     print("Warning: No OpenAI keys found.")
     OPENAI_API_KEY = ''
+try:
+    from .key import DEEPSEEK_API_KEY
+except:
+    print("Warning: No DeepSeek keys found.")
+    DEEPSEEK_API_KEY = ''
+
+# DeepSeek API 配置
+DEEPSEEK_API_BASE = os.environ.get("DEEPSEEK_API_BASE", "https://api.deepseek.com")
+DEEPSEEK_MODEL = os.environ.get("DEEPSEEK_MODEL", "deepseek-reasoner")
 
 try:
     import torch
@@ -48,7 +57,7 @@ else:
 print(f'DRY_RUN={DRY_RUN}')
 
 # LLM configs
-LLM_PROVIDER: Literal['gpt', 'claude', 'llama'] = 'claude'
+LLM_PROVIDER: Literal['gpt', 'claude', 'llama','deepseek'] = 'deepseek'
 TEMPERATURE: float = 0.05
 NUM_COMPLETIONS: int = 1
 # MAX_TOKENS: int = 8192

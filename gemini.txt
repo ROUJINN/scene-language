@@ -1,0 +1,228 @@
+```python
+from helper import *
+import numpy as np
+
+# --- Constants ---
+SQUARE_SIZE = 0.1
+BOARD_HEIGHT = 0.01
+BOARD_SIZE = 8 * SQUARE_SIZE
+
+PIECE_BASE_RADIUS = SQUARE_SIZE * 0.3
+PIECE_BASE_HEIGHT_FACTOR = 0.6 # Base cylinder height relative to total piece height
+PIECE_TOP_RADIUS_FACTOR = 0.8 # Sphere/top radius relative to base radius
+
+PAWN_HEIGHT = SQUARE_SIZE * 0.6
+ROOK_HEIGHT = SQUARE_SIZE * 0.8
+KNIGHT_HEIGHT = SQUARE_SIZE * 0.85
+BISHOP_HEIGHT = SQUARE_SIZE * 0.9
+QUEEN_HEIGHT = SQUARE_SIZE * 1.1
+KING_HEIGHT = SQUARE_SIZE * 1.2
+
+WHITE_COLOR = (0.9, 0.9, 0.9)
+BLACK_COLOR = (0.2, 0.2, 0.2)
+BOARD_COLOR_LIGHT = (0.85, 0.7, 0.5) # Light wood
+BOARD_COLOR_DARK = (0.4, 0.25, 0.15) # Dark wood
+
+BOARD_Y_OFFSET = BOARD_HEIGHT / 2.0
+
+# --- Helper Functions (Not registered) ---
+
+def get_square_center(row: int, col: int) -> P:
+    """Calculates the center coordinates of a square on the board."""
+    # Board centered at (0, 0, 0). Rows (0-7) map to z, Cols (0-7) map to x.
+    # (0,0) is typically bottom-left for white (positive z, negative x)
+    # Let's map row 0 to z = 3.5*SQUARE_SIZE, row 7 to z = -3.5*SQUARE_SIZE
+    # Let's map col 0 to x = -3.5*SQUARE_SIZE, col 7 to x = 3.5*SQUARE_SIZE
+    x = (-3.5 + col) * SQUARE_SIZE
+    z = (3.5 - row) * SQUARE_SIZE
+    y = 0 # Center of the board's thickness
+    return (x, y, z)
+
+def place_shape_on_square(shape: Shape, row: int, col: int) -> Shape:
+    """Places a shape centered on a specific board square, resting on top."""
+    target_pos = get_square_center(row, col)
+    # Adjust y to place the bottom of the shape on top of the board
+    shape_min_y = compute_shape_min(shape)[1]
+    y_offset = BOARD_Y_OFFSET - shape_min_y
+    
+    # Create translation matrix
+    # We translate in x, z first based on square center, then adjust y
+    pose = translation_matrix((target_pos[0], y_offset, target_pos[2]))
+    return transform_shape(shape, pose)
+
+# --- Registered Shape Functions ---
+
+@register(docstring="Creates a single square for the chessboard.")
+def square(size: float, height: float, color: tuple[float, float, float]) -> Shape:
+    """Creates a flat cube representing a chessboard square."""
+    return primitive_call('cube', shape_kwargs={'scale': (size, height, size)}, color=color)
+
+@register(docstring="Creates an 8x8 chessboard pattern.")
+def chessboard(square_size: float, height: float, color1: tuple[float, float, float], color2: tuple[float, float, float]) -> Shape:
+    """Creates the 8x8 grid of squares."""
+    all_squares = []
+    for i in range(8): # row (z-axis)
+        for j in range(8): # col (x-axis)
+            is_light_square = (i + j) % 2 == 0
+            color = color1 if is_light_square else color2
+            sq = library_call('square', size=square_size, height=height, color=color)
+            center_pos = get_square_center(i, j)
+            # Translate the square to its position (centered at y=0)
+            pose = translation_matrix(center_pos)
+            transformed_sq = transform_shape(sq, pose)
+            all_squares.append(transformed_sq)
+    
+    # Flatten the list of lists
+    flat_list = [item for sublist in all_squares for item in sublist]
+    return flat_list # No need for concat_shapes here as loop/list comprehension builds the list
+
+
+@register(docstring="Creates a basic pawn piece.")
+def pawn(color: tuple[float, float, float], height: float, base_radius: float) -> Shape:
+    """A simple pawn: cylinder base and sphere top."""
+    base_h = height * PIECE_BASE_HEIGHT_FACTOR
+    top_h = height * (1.0 - PIECE_BASE_HEIGHT_FACTOR)
+    top_radius = base_radius * PIECE_TOP_RADIUS_FACTOR
+
+    base = primitive_call('cylinder', shape_kwargs={'radius': base_radius, 'p0': (0, 0, 0), 'p1': (0, base_h, 0)}, color=color)
+    top = primitive_call('sphere', shape_kwargs={'radius': top_radius}, color=color)
+    
+    # Position the top sphere above the base
+    top = transform_shape(top, translation_matrix((0, base_h + top_radius * 0.8, 0))) # Slightly embed sphere
+
+    return concat_shapes(base, top)
+
+@register(docstring="Creates a basic rook piece.")
+def rook(color: tuple[float, float, float], height: float, base_radius: float) -> Shape:
+    """A simple rook: cylinder base and a slightly wider, shorter cylinder top."""
+    base_h = height * 0.8
+    top_h = height * 0.2
+    top_radius = base_radius * 1.1 # Wider top
+
+    base = primitive_call('cylinder', shape_kwargs={'radius': base_radius, 'p0': (0, 0, 0), 'p1': (0, base_h, 0)}, color=color)
+    top = primitive_call('cylinder', shape_kwargs={'radius': top_radius, 'p0': (0, base_h, 0), 'p1': (0, base_h + top_h, 0)}, color=color)
+    
+    return concat_shapes(base, top)
+
+@register(docstring="Creates a basic knight piece.")
+def knight(color: tuple[float, float, float], height: float, base_radius: float) -> Shape:
+    """A simple knight: cylinder base and an offset sphere top."""
+    base_h = height * PIECE_BASE_HEIGHT_FACTOR
+    top_radius = base_radius * PIECE_TOP_RADIUS_FACTOR * 1.1 # Slightly larger head
+
+    base = primitive_call('cylinder', shape_kwargs={'radius': base_radius, 'p0': (0, 0, 0), 'p1': (0, base_h, 0)}, color=color)
+    top = primitive_call('sphere', shape_kwargs={'radius': top_radius}, color=color)
+    
+    # Position the top sphere above and slightly forward
+    top = transform_shape(top, translation_matrix((0, base_h + top_radius * 0.5, -base_radius * 0.5))) 
+
+    return concat_shapes(base, top)
+
+@register(docstring="Creates a basic bishop piece.")
+def bishop(color: tuple[float, float, float], height: float, base_radius: float) -> Shape:
+    """A simple bishop: cylinder base and a smaller sphere top."""
+    base_h = height * PIECE_BASE_HEIGHT_FACTOR
+    top_radius = base_radius * PIECE_TOP_RADIUS_FACTOR * 0.9 # Smaller top than pawn
+
+    base = primitive_call('cylinder', shape_kwargs={'radius': base_radius, 'p0': (0, 0, 0), 'p1': (0, base_h, 0)}, color=color)
+    top = primitive_call('sphere', shape_kwargs={'radius': top_radius}, color=color)
+    
+    # Position the top sphere above the base
+    top = transform_shape(top, translation_matrix((0, base_h + top_radius * 0.9, 0))) # Position sphere nicely
+
+    return concat_shapes(base, top)
+
+@register(docstring="Creates a basic queen piece.")
+def queen(color: tuple[float, float, float], height: float, base_radius: float) -> Shape:
+    """A simple queen: tall cylinder base and a prominent sphere top."""
+    base_h = height * PIECE_BASE_HEIGHT_FACTOR
+    top_radius = base_radius * PIECE_TOP_RADIUS_FACTOR * 1.1 # Larger sphere
+
+    base = primitive_call('cylinder', shape_kwargs={'radius': base_radius, 'p0': (0, 0, 0), 'p1': (0, base_h, 0)}, color=color)
+    top = primitive_call('sphere', shape_kwargs={'radius': top_radius}, color=color)
+    
+    # Position the top sphere above the base
+    top = transform_shape(top, translation_matrix((0, base_h + top_radius * 0.8, 0))) 
+
+    return concat_shapes(base, top)
+
+@register(docstring="Creates a basic king piece.")
+def king(color: tuple[float, float, float], height: float, base_radius: float) -> Shape:
+    """A simple king: tallest cylinder base, sphere top, and a small cross."""
+    base_h = height * PIECE_BASE_HEIGHT_FACTOR
+    top_radius = base_radius * PIECE_TOP_RADIUS_FACTOR
+    cross_size = top_radius * 0.3
+    cross_thickness = cross_size * 0.2
+
+    base = primitive_call('cylinder', shape_kwargs={'radius': base_radius, 'p0': (0, 0, 0), 'p1': (0, base_h, 0)}, color=color)
+    top = primitive_call('sphere', shape_kwargs={'radius': top_radius}, color=color)
+    top_center_y = base_h + top_radius * 0.8
+    top = transform_shape(top, translation_matrix((0, top_center_y, 0))) 
+
+    # Small cross on top
+    cross_y = top_center_y + top_radius * 0.9
+    cross_vert = primitive_call('cube', shape_kwargs={'scale': (cross_thickness, cross_size, cross_thickness)}, color=color)
+    cross_horz = primitive_call('cube', shape_kwargs={'scale': (cross_size, cross_thickness, cross_thickness)}, color=color)
+    
+    cross_vert = transform_shape(cross_vert, translation_matrix((0, cross_y + cross_size/2 , 0)))
+    cross_horz = transform_shape(cross_horz, translation_matrix((0, cross_y + cross_size/2, 0))) # Center horz bar at same height
+
+    return concat_shapes(base, top, cross_vert, cross_horz)
+
+
+@register(docstring="Creates a full set of pieces for one color and places them.")
+def piece_set(color: tuple[float, float, float], is_white: bool) -> Shape:
+    """Creates and positions 16 pieces for one side."""
+    pieces = []
+    
+    pawn_row = 1 if is_white else 6
+    back_row = 0 if is_white else 7
+
+    # Pawns
+    for col in range(8):
+        pawn_piece = library_call('pawn', color=color, height=PAWN_HEIGHT, base_radius=PIECE_BASE_RADIUS)
+        pieces.append(place_shape_on_square(pawn_piece, pawn_row, col))
+
+    # Rooks
+    rook_piece = library_call('rook', color=color, height=ROOK_HEIGHT, base_radius=PIECE_BASE_RADIUS)
+    pieces.append(place_shape_on_square(rook_piece, back_row, 0))
+    pieces.append(place_shape_on_square(rook_piece, back_row, 7))
+
+    # Knights
+    knight_piece = library_call('knight', color=color, height=KNIGHT_HEIGHT, base_radius=PIECE_BASE_RADIUS)
+    pieces.append(place_shape_on_square(knight_piece, back_row, 1))
+    pieces.append(place_shape_on_square(knight_piece, back_row, 6))
+
+    # Bishops
+    bishop_piece = library_call('bishop', color=color, height=BISHOP_HEIGHT, base_radius=PIECE_BASE_RADIUS)
+    pieces.append(place_shape_on_square(bishop_piece, back_row, 2))
+    pieces.append(place_shape_on_square(bishop_piece, back_row, 5))
+
+    # Queen
+    queen_piece = library_call('queen', color=color, height=QUEEN_HEIGHT, base_radius=PIECE_BASE_RADIUS)
+    pieces.append(place_shape_on_square(queen_piece, back_row, 3))
+
+    # King
+    king_piece = library_call('king', color=color, height=KING_HEIGHT, base_radius=PIECE_BASE_RADIUS)
+    pieces.append(place_shape_on_square(king_piece, back_row, 4))
+
+    # Flatten the list of lists before returning
+    flat_list = [item for sublist in pieces for item in sublist]
+    return flat_list
+
+
+@register(docstring="Creates the final chessboard with all pieces in starting position.")
+def full_chess_set() -> Shape:
+    """Combines the board and both sets of pieces."""
+    board = library_call('chessboard', 
+                         square_size=SQUARE_SIZE, 
+                         height=BOARD_HEIGHT, 
+                         color1=BOARD_COLOR_LIGHT, 
+                         color2=BOARD_COLOR_DARK)
+                         
+    white_pieces = library_call('piece_set', color=WHITE_COLOR, is_white=True)
+    black_pieces = library_call('piece_set', color=BLACK_COLOR, is_white=False)
+
+    return concat_shapes(board, white_pieces, black_pieces)
+
+```
